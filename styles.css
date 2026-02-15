@@ -296,6 +296,250 @@ form {
     margin-top: 30px;
 }
 
+/* Credentials Modal Styles */
+.modal-large {
+    max-width: 800px;
+}
+
+.credentials-modal-body {
+    padding: 30px;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+.credentials-section h3 {
+    color: #333;
+    margin-bottom: 10px;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin: 20px 0;
+}
+
+.stat-item {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 8px;
+    border: 2px solid #e9ecef;
+}
+
+.stat-label {
+    font-size: 0.9em;
+    color: #666;
+    margin-bottom: 5px;
+}
+
+.stat-value {
+    font-size: 1.8em;
+    font-weight: bold;
+    color: #667eea;
+    margin-bottom: 5px;
+}
+
+.stat-details {
+    font-size: 0.85em;
+    color: #999;
+}
+
+.credentials-section h4 {
+    margin-top: 25px;
+    margin-bottom: 15px;
+    color: #333;
+    border-bottom: 2px solid #e9ecef;
+    padding-bottom: 8px;
+}
+
+.info-grid {
+    display: grid;
+    gap: 15px;
+}
+
+.info-item {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    align-items: center;
+    gap: 10px;
+}
+
+.info-item.full-width {
+    grid-column: 1 / -1;
+    grid-template-columns: 120px 1fr;
+}
+
+.info-item label {
+    font-weight: 600;
+    color: #555;
+}
+
+.info-value {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.info-value code {
+    background: #f8f9fa;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    flex: 1;
+    border: 1px solid #e9ecef;
+    word-break: break-all;
+}
+
+.info-value button {
+    background: #667eea;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85em;
+    transition: background 0.2s ease;
+}
+
+.info-value button:hover {
+    background: #5568d3;
+}
+
+.code-examples {
+    margin-top: 15px;
+}
+
+.code-example {
+    margin-bottom: 20px;
+}
+
+.code-example h5 {
+    color: #333;
+    margin-bottom: 8px;
+}
+
+.code-example pre {
+    background: #282c34;
+    color: #abb2bf;
+    padding: 15px;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 0;
+}
+
+.code-example code {
+    font-family: 'Courier New', monospace;
+    font-size: 0.9em;
+    line-height: 1.5;
+}
+
+.database-size {
+    color: #888;
+    font-size: 0.9em;
+    margin-top: 8px;
+}
+
+.btn-view {
+    background: #667eea;
+    color: white;
+}
+
+.btn-view:hover {
+    background: #5568d3;
+}
+
+/* Tab Styles */
+.tab-container {
+    margin-top: 20px;
+}
+
+.tabs {
+    display: flex;
+    gap: 5px;
+    border-bottom: 2px solid #e9ecef;
+    margin-bottom: 20px;
+}
+
+.tab-btn {
+    background: transparent;
+    border: none;
+    padding: 10px 20px;
+    font-size: 0.95em;
+    color: #666;
+    cursor: pointer;
+    border-bottom: 3px solid transparent;
+    transition: all 0.3s ease;
+    font-weight: 500;
+}
+
+.tab-btn:hover {
+    color: #667eea;
+    background: #f8f9fa;
+}
+
+.tab-btn.active {
+    color: #667eea;
+    border-bottom-color: #667eea;
+    font-weight: 600;
+}
+
+.tab-content {
+    display: none;
+    animation: fadeIn 0.3s ease;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+.connection-string-box {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 8px;
+    border: 2px solid #e9ecef;
+}
+
+.connection-string-box label {
+    display: block;
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 10px;
+}
+
+.connection-value {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.connection-value code {
+    background: #282c34;
+    color: #61dafb;
+    padding: 12px 15px;
+    border-radius: 6px;
+    font-family: 'Courier New', monospace;
+    flex: 1;
+    word-break: break-all;
+    font-size: 0.9em;
+    line-height: 1.5;
+}
+
+.connection-value button {
+    background: #667eea;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85em;
+    transition: background 0.2s ease;
+    white-space: nowrap;
+}
+
+.connection-value button:hover {
+    background: #5568d3;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
     header h1 {
@@ -308,5 +552,26 @@ form {
 
     .modal-content {
         width: 95%;
+    }
+
+    .modal-large {
+        width: 95%;
+        max-width: 95%;
+    }
+
+    .info-item {
+        grid-template-columns: 1fr;
+    }
+
+    .info-item.full-width {
+        grid-template-columns: 1fr;
+    }
+
+    .info-item label {
+        margin-bottom: 5px;
+    }
+
+    .stats-grid {
+        grid-template-columns: 1fr;
     }
 }

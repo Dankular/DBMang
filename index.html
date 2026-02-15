@@ -65,6 +65,19 @@
         </div>
     </div>
 
+    <!-- Modal for viewing database credentials -->
+    <div id="credentialsModal" class="modal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2>Database Details</h2>
+                <span class="close" onclick="document.getElementById('credentialsModal').classList.remove('show')">&times;</span>
+            </div>
+            <div id="credentialsContent" class="credentials-modal-body">
+                <!-- Credentials content will be inserted here -->
+            </div>
+        </div>
+    </div>
+
     <script src="script.js"></script>
 </body>
 </html>
