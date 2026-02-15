@@ -35,3 +35,6 @@ Thumbs.db
 # Production
 dist/
 build/
+
+# Vercel
+.vercel

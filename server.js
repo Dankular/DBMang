@@ -3,22 +3,46 @@ const cors = require('cors');
 const mysql = require('mysql');
 const duckdb = require('duckdb');
 const { v4: uuidv4 } = require('uuid');
+require('dotenv').config();
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
-// Middleware
-app.use(cors());
+// CORS configuration for Vercel
+const allowedOrigins = [
+    'http://localhost:3000',
+    'https://db-mang.vercel.app',
+    'https://db-mang-git-claude-database-list-webp-196743-dankulars-projects.vercel.app',
+    /\.vercel\.app$/ // Allow all vercel preview deployments
+];
+
+app.use(cors({
+    origin: function(origin, callback) {
+        // Allow requests with no origin (mobile apps, curl, etc)
+        if (!origin) return callback(null, true);
+
+        if (allowedOrigins.some(allowed => {
+            if (allowed instanceof RegExp) return allowed.test(origin);
+            return allowed === origin;
+        })) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    credentials: true
+}));
+
 app.use(express.json());
 app.use(express.static('.'));
 
 // Central MySQL Database Connection (stores ALL database instances)
 const centralDB = mysql.createConnection({
-    host: "8eysec.h.filess.io",
-    user: "context_mightydeal",
-    password: "76bc57f273566a5b20fcd602342be3cd9197fbc5",
-    database: "context_mightydeal",
-    port: 61001
+    host: process.env.MYSQL_HOST || "8eysec.h.filess.io",
+    user: process.env.MYSQL_USER || "context_mightydeal",
+    password: process.env.MYSQL_PASSWORD || "76bc57f273566a5b20fcd602342be3cd9197fbc5",
+    database: process.env.MYSQL_DATABASE || "context_mightydeal",
+    port: parseInt(process.env.MYSQL_PORT) || 61001
 });
 
 // Connect to central database

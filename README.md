@@ -1,43 +1,89 @@
-# DuckDB Database Manager
+# Database Manager
 
-A full-stack web application for managing databases powered by DuckDB. Create database instances, generate credentials, and get connection strings with code examples.
+A modern full-stack web application for managing databases with **Tailwind CSS**, centralized **MySQL storage**, and **DuckDB** as a query interface layer. Create database instances, generate unique credentials, and get connection strings with code examples.
 
-## Features
+## 🌐 Live Deployment
 
-- **🚀 Database Provisioning**: Create database instances via DuckDB backend
-- **🔐 Credential Management**: Automatically generate usernames, passwords, and connection strings
+- **Production**: https://db-mang.vercel.app
+- **Git Branch Preview**: https://db-mang-git-claude-database-list-webp-196743-dankulars-projects.vercel.app
+
+## ✨ Features
+
+- **🎨 Modern Tailwind UI**: Professional table view with search and filters
+- **🔍 Search & Filter**: Real-time search by name/description, filter by type and status
+- **🚀 Database Provisioning**: Create database instances with unique credentials
+- **🔐 Credential Management**: Auto-generate usernames, passwords, and connection URIs
 - **📊 Database Statistics**: View storage usage, available space, and table count
-- **💾 Multiple Database Types**: Support for MySQL, PostgreSQL, MongoDB, SQLite, and Redis
+- **💾 Multiple Database Types**: MySQL, PostgreSQL, MongoDB, SQLite, Redis
+- **🌍 Region Selection**: Deploy across 6 major regions (US, EU, Asia Pacific)
+- **📍 Status Indicators**: Active, Stopped, Pending states with color badges
 - **📋 Code Examples**: Get ready-to-use connection code in Node.js
-- **🎨 Modern UI**: Clean, responsive interface with gradient backgrounds
-- **📦 Real Database Storage**: Uses DuckDB for actual database creation and storage
+- **🏢 Central MySQL Storage**: All database instances stored in central MySQL database
+- **⚡ DuckDB Interface**: Query abstraction layer for multi-database support
+- **☁️ Vercel Deployment**: Production-ready with serverless architecture
 
-## Architecture
+## 🏗️ Architecture
 
-### Backend (Node.js + Express + DuckDB)
+```
+┌──────────────────────┐
+│   Frontend           │
+│  (Tailwind CSS)      │
+│  - Table View        │
+│  - Search & Filters  │
+│  - Real-time Updates │
+└──────────┬───────────┘
+           │
+           │ REST API
+           ▼
+┌──────────────────────┐
+│   Backend            │
+│  (Node.js/Express)   │
+│  - API Endpoints     │
+│  - Auth & CORS       │
+│  - Vercel Serverless │
+└──────────┬───────────┘
+           │
+      ┌────┴─────┐
+      │          │
+      ▼          ▼
+┌──────────┐  ┌───────────┐
+│  MySQL   │  │  DuckDB   │
+│ Central  │  │ Interface │
+│ Storage  │  │   Layer   │
+│ (Remote) │  │ (:memory) │
+└──────────┘  └───────────┘
+```
+
+### Backend (Node.js + Express + MySQL + DuckDB)
 - RESTful API for database management
-- DuckDB integration for database provisioning
-- Automatic credential generation
-- Database file storage and metadata management
+- **Central MySQL database** for all database instance metadata
+- **DuckDB** as query interface and abstraction layer
+- Automatic unique credential generation per database
 - Statistics and usage tracking
+- Environment-based configuration
+- CORS configured for Vercel deployments
 
-### Frontend (Vanilla JavaScript)
-- Interactive database list view
+### Frontend (Tailwind CSS + Vanilla JavaScript)
+- Modern table view with hover effects
+- Real-time search and multi-filter functionality
 - Modal dialogs for creating databases and viewing credentials
-- Real-time connection to backend API
-- Copy-to-clipboard functionality
-- Success/error notifications
+- Copy-to-clipboard for all connection details
+- Toast notifications for success/error feedback
+- Fully responsive design (mobile & desktop)
+- Auto-detecting API URLs (local vs production)
 
-## Installation
+## 📦 Installation
 
 ### Prerequisites
 - Node.js (v14 or higher)
 - npm or yarn
+- MySQL database (for central storage)
 
-### Setup Instructions
+### Local Development Setup
 
-1. **Clone or navigate to the repository**
+1. **Clone the repository**
    ```bash
+   git clone <repository-url>
    cd DBMang
    ```
 
@@ -46,7 +92,22 @@ A full-stack web application for managing databases powered by DuckDB. Create da
    npm install
    ```
 
-3. **Start the server**
+3. **Configure environment variables**
+   ```bash
+   cp .env.example .env
+   ```
+
+   Edit `.env` with your MySQL credentials:
+   ```env
+   MYSQL_HOST=8eysec.h.filess.io
+   MYSQL_USER=context_mightydeal
+   MYSQL_PASSWORD=your_password_here
+   MYSQL_DATABASE=context_mightydeal
+   MYSQL_PORT=61001
+   PORT=3000
+   ```
+
+4. **Start the server**
    ```bash
    npm start
    ```
@@ -56,11 +117,44 @@ A full-stack web application for managing databases powered by DuckDB. Create da
    npm run dev
    ```
 
-4. **Open the application**
+5. **Open the application**
    Open your browser and navigate to:
    ```
    http://localhost:3000
    ```
+
+### Vercel Deployment
+
+1. **Connect to Vercel**
+   - Link your GitHub repository to Vercel
+   - Vercel will auto-deploy on every push to your branch
+
+2. **Configure Environment Variables in Vercel Dashboard**
+   - Go to: Project Settings → Environment Variables
+   - Add the following variables:
+     - `MYSQL_HOST` = 8eysec.h.filess.io
+     - `MYSQL_USER` = context_mightydeal
+     - `MYSQL_PASSWORD` = (your password)
+     - `MYSQL_DATABASE` = context_mightydeal
+     - `MYSQL_PORT` = 61001
+
+3. **Deploy**
+   - Push to your branch
+   - Vercel automatically builds and deploys
+   - Access via: `https://db-mang.vercel.app`
+
+### Manual Vercel Deployment
+
+```bash
+# Install Vercel CLI
+npm install -g vercel
+
+# Deploy to Vercel
+vercel
+
+# Deploy to production
+vercel --prod
+```
 
 ## Usage
 
@@ -200,25 +294,32 @@ DBMang/
 - **Vanilla JavaScript**: No framework dependencies
 - **Fetch API**: Backend communication
 
-## How It Works
+## 🔧 How It Works
 
 1. **Database Creation**: When you create a database, the backend:
-   - Creates a new DuckDB database file in the `databases/` directory
-   - Generates unique credentials (username and password)
-   - Stores metadata in `db-metadata.json`
+   - Inserts a new record into the **central MySQL database** (`database_instances` table)
+   - Generates unique credentials (username, password, port, connection URI)
+   - Sets initial status to `pending`, then transitions to `active` after 2 seconds
    - Returns connection information to the frontend
+   - **No local files created** - everything stored in central MySQL
 
 2. **Credential Generation**: Each database gets:
-   - Username: `{database_name}_user`
-   - Password: Random 32-character string
-   - Connection string: Formatted based on database type
+   - **Username**: `{database_name}_user` (sanitized)
+   - **Password**: Random UUID-based 32-character string
+   - **Port**: Type-specific (MySQL:3306, PostgreSQL:5432, MongoDB:27017, etc.)
+   - **Connection URI**: Formatted based on database type
 
-3. **Storage Management**: DuckDB files are stored locally and tracked with metadata including:
-   - File path
-   - Creation date
-   - Database type
-   - Description
-   - Credentials
+3. **Central Storage**: All database instances are stored in MySQL with:
+   - Unique ID (UUID)
+   - Name, type, description, region
+   - Status (pending, active, stopped)
+   - Full credentials and connection strings
+   - Timestamps (created_at, updated_at)
+
+4. **DuckDB Interface Layer**: Provides query abstraction:
+   - Runs in **:memory:** mode (no persistence)
+   - Translates queries between different database types
+   - Acts as a unified interface for multiple database engines
 
 ## Example Connection Strings
 
