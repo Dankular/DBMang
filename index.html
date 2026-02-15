@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database Manager</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Database Manager</h1>
+            <p class="subtitle">Manage your databases efficiently</p>
+        </header>
+
+        <div class="action-bar">
+            <button id="createDbBtn" class="btn-primary">
+                <span class="icon">+</span> Create New Database
+            </button>
+        </div>
+
+        <div class="database-list">
+            <h2>Your Databases</h2>
+            <div id="databaseContainer" class="database-grid">
+                <!-- Database cards will be inserted here -->
+            </div>
+            <div id="emptyState" class="empty-state">
+                <p>No databases yet. Create your first database to get started!</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for creating new database -->
+    <div id="createDbModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Create New Database</h2>
+                <span class="close">&times;</span>
+            </div>
+            <form id="createDbForm">
+                <div class="form-group">
+                    <label for="dbName">Database Name</label>
+                    <input type="text" id="dbName" name="dbName" required placeholder="Enter database name">
+                </div>
+                <div class="form-group">
+                    <label for="dbType">Database Type</label>
+                    <select id="dbType" name="dbType" required>
+                        <option value="">Select type...</option>
+                        <option value="MySQL">MySQL</option>
+                        <option value="PostgreSQL">PostgreSQL</option>
+                        <option value="MongoDB">MongoDB</option>
+                        <option value="SQLite">SQLite</option>
+                        <option value="Redis">Redis</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="dbDescription">Description (Optional)</label>
+                    <textarea id="dbDescription" name="dbDescription" rows="3" placeholder="Enter database description"></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" id="cancelBtn">Cancel</button>
+                    <button type="submit" class="btn-primary">Create Database</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
