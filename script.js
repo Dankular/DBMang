@@ -3,16 +3,18 @@ const API_URL = 'http://localhost:3000/api';
 
 // Database storage
 let databases = [];
+let filteredDatabases = [];
 let currentDatabase = null;
 
 // DOM Elements
 const createDbBtn = document.getElementById('createDbBtn');
 const createDbModal = document.getElementById('createDbModal');
-const closeBtn = document.querySelector('.close');
-const cancelBtn = document.getElementById('cancelBtn');
 const createDbForm = document.getElementById('createDbForm');
-const databaseContainer = document.getElementById('databaseContainer');
+const databaseTableBody = document.getElementById('databaseTableBody');
 const emptyState = document.getElementById('emptyState');
+const searchInput = document.getElementById('searchInput');
+const typeFilter = document.getElementById('typeFilter');
+const statusFilter = document.getElementById('statusFilter');
 
 // Load databases from API on page load
 document.addEventListener('DOMContentLoaded', () => {
@@ -21,23 +23,40 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Open modal
 createDbBtn.addEventListener('click', () => {
-    createDbModal.classList.add('show');
+    createDbModal.classList.remove('hidden');
 });
 
-// Close modal
-closeBtn.addEventListener('click', closeModal);
-cancelBtn.addEventListener('click', closeModal);
-
-// Close modal when clicking outside
-window.addEventListener('click', (e) => {
-    if (e.target === createDbModal) {
-        closeModal();
-    }
-});
-
+// Close modal function
 function closeModal() {
-    createDbModal.classList.remove('show');
+    createDbModal.classList.add('hidden');
     createDbForm.reset();
+}
+
+// Close credentials modal
+function closeCredentialsModal() {
+    document.getElementById('credentialsModal').classList.add('hidden');
+}
+
+// Search functionality
+searchInput.addEventListener('input', applyFilters);
+typeFilter.addEventListener('change', applyFilters);
+statusFilter.addEventListener('change', applyFilters);
+
+function applyFilters() {
+    const searchTerm = searchInput.value.toLowerCase();
+    const typeValue = typeFilter.value;
+    const statusValue = statusFilter.value;
+
+    filteredDatabases = databases.filter(db => {
+        const matchesSearch = db.name.toLowerCase().includes(searchTerm) ||
+                            (db.description && db.description.toLowerCase().includes(searchTerm));
+        const matchesType = !typeValue || db.type === typeValue;
+        const matchesStatus = !statusValue || db.status === statusValue;
+
+        return matchesSearch && matchesType && matchesStatus;
+    });
+
+    renderDatabases();
 }
 
 // Handle form submission
@@ -48,7 +67,9 @@ createDbForm.addEventListener('submit', async (e) => {
     const dbData = {
         name: formData.get('dbName'),
         type: formData.get('dbType'),
-        description: formData.get('dbDescription')
+        region: formData.get('dbRegion'),
+        description: formData.get('dbDescription'),
+        status: 'pending'
     };
 
     try {
@@ -85,6 +106,7 @@ async function loadDatabases() {
             throw new Error('Failed to load databases');
         }
         databases = await response.json();
+        filteredDatabases = databases;
         renderDatabases();
     } catch (error) {
         console.error('Error loading databases:', error);
@@ -92,32 +114,96 @@ async function loadDatabases() {
     }
 }
 
-// Render databases
+// Render databases in table
 function renderDatabases() {
-    if (databases.length === 0) {
+    if (filteredDatabases.length === 0) {
         emptyState.classList.remove('hidden');
-        databaseContainer.innerHTML = '';
+        databaseTableBody.innerHTML = '';
         return;
     }
 
     emptyState.classList.add('hidden');
 
-    databaseContainer.innerHTML = databases.map(db => `
-        <div class="database-card" data-id="${db.id}" onclick="showCredentials('${db.id}')">
-            <div class="database-card-header">
-                <div>
-                    <h3>${escapeHtml(db.name)}</h3>
-                    <span class="database-type">${escapeHtml(db.type)}</span>
-                </div>
-            </div>
-            ${db.description ? `<p class="database-description">${escapeHtml(db.description)}</p>` : ''}
-            ${db.sizeFormatted ? `<p class="database-size">Size: ${escapeHtml(db.sizeFormatted)}</p>` : ''}
-            <div class="database-actions" onclick="event.stopPropagation()">
-                <button class="btn-small btn-view" onclick="showCredentials('${db.id}')">View Details</button>
-                <button class="btn-small btn-delete" onclick="deleteDatabase('${db.id}')">Delete</button>
-            </div>
-        </div>
-    `).join('');
+    databaseTableBody.innerHTML = filteredDatabases.map(db => {
+        const statusBadge = getStatusBadge(db.status);
+        const regionName = getRegionName(db.region);
+        const createdDate = new Date(db.createdAt).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+        });
+
+        return `
+            <tr class="hover:bg-gray-50 cursor-pointer transition-colors" onclick="showCredentials('${db.id}')">
+                <td class="px-6 py-4">
+                    <div class="font-semibold text-gray-900">${escapeHtml(db.name)}</div>
+                    ${db.description ? `<div class="text-sm text-gray-500">${escapeHtml(db.description)}</div>` : ''}
+                </td>
+                <td class="px-6 py-4">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary bg-opacity-10 text-primary">
+                        ${escapeHtml(db.type)}
+                    </span>
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-600">${regionName}</td>
+                <td class="px-6 py-4">${statusBadge}</td>
+                <td class="px-6 py-4 text-sm text-gray-600">${db.sizeFormatted || '0 B'}</td>
+                <td class="px-6 py-4 text-sm text-gray-600">${createdDate}</td>
+                <td class="px-6 py-4 text-right" onclick="event.stopPropagation()">
+                    <div class="flex justify-end gap-2">
+                        <button
+                            onclick="showCredentials('${db.id}')"
+                            class="text-primary hover:text-opacity-80 font-medium text-sm transition-colors"
+                        >
+                            View
+                        </button>
+                        <button
+                            onclick="deleteDatabase('${db.id}')"
+                            class="text-red-600 hover:text-red-800 font-medium text-sm transition-colors"
+                        >
+                            Delete
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// Get status badge HTML
+function getStatusBadge(status) {
+    const statusConfig = {
+        'active': {
+            bg: 'bg-green-100',
+            text: 'text-green-800',
+            label: 'Active'
+        },
+        'stopped': {
+            bg: 'bg-red-100',
+            text: 'text-red-800',
+            label: 'Stopped'
+        },
+        'pending': {
+            bg: 'bg-yellow-100',
+            text: 'text-yellow-800',
+            label: 'Pending'
+        }
+    };
+
+    const config = statusConfig[status] || statusConfig['active'];
+    return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${config.bg} ${config.text}">${config.label}</span>`;
+}
+
+// Get region display name
+function getRegionName(region) {
+    const regions = {
+        'us-east-1': 'US East (N. Virginia)',
+        'us-west-2': 'US West (Oregon)',
+        'eu-west-1': 'EU West (Ireland)',
+        'eu-central-1': 'EU Central (Frankfurt)',
+        'ap-southeast-1': 'Asia Pacific (Singapore)',
+        'ap-northeast-1': 'Asia Pacific (Tokyo)'
+    };
+    return regions[region] || region || 'N/A';
 }
 
 // Show credentials modal
@@ -164,122 +250,153 @@ async function deleteDatabase(id) {
     }
 }
 
-// Display credentials modal
+// Display credentials modal with Tailwind styling
 function displayCredentialsModal(db) {
     const modal = document.getElementById('credentialsModal');
     const content = document.getElementById('credentialsContent');
 
     const cred = db.credentials;
     const stats = db.stats || {};
+    const regionName = getRegionName(db.region);
+    const statusBadge = getStatusBadge(db.status);
 
     const codeExamples = getCodeExamples(cred);
 
     content.innerHTML = `
-        <div class="credentials-section">
-            <h3>${escapeHtml(db.name)}</h3>
-            <span class="database-type">${escapeHtml(db.type)}</span>
-
-            <div class="stats-grid">
-                <div class="stat-item">
-                    <div class="stat-label">Storage Usage</div>
-                    <div class="stat-value">${stats.usagePercent || 0}%</div>
-                    <div class="stat-details">${stats.size || '0 Bytes'} / ${stats.maxSize || '10 MB'}</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-label">Available Space</div>
-                    <div class="stat-value">${stats.availableSpace || '10 MB'}</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-label">Tables</div>
-                    <div class="stat-value">${stats.tables || 0}</div>
-                </div>
-            </div>
-
-            <h4>Connection Information</h4>
-            <div class="tab-container">
-                <div class="tabs">
-                    <button class="tab-btn active" onclick="switchTab(event, 'general')">General</button>
-                    <button class="tab-btn" onclick="switchTab(event, 'uri')">Connection URI</button>
-                    <button class="tab-btn" onclick="switchTab(event, 'cli')">CLI Command</button>
-                </div>
-
-                <div id="general" class="tab-content active">
-                    <div class="info-grid">
-                        <div class="info-item">
-                            <label>User:</label>
-                            <div class="info-value">
-                                <code>${escapeHtml(cred.username)}</code>
-                                <button onclick="copyToClipboard('${escapeHtml(cred.username)}')">Copy</button>
-                            </div>
-                        </div>
-                        <div class="info-item">
-                            <label>Password:</label>
-                            <div class="info-value">
-                                <code>${escapeHtml(cred.password)}</code>
-                                <button onclick="copyToClipboard('${escapeHtml(cred.password)}')">Copy</button>
-                            </div>
-                        </div>
-                        <div class="info-item">
-                            <label>Host:</label>
-                            <div class="info-value">
-                                <code>${escapeHtml(cred.host)}</code>
-                                <button onclick="copyToClipboard('${escapeHtml(cred.host)}')">Copy</button>
-                            </div>
-                        </div>
-                        <div class="info-item">
-                            <label>Port:</label>
-                            <div class="info-value">
-                                <code>${escapeHtml(cred.port.toString())}</code>
-                                <button onclick="copyToClipboard('${escapeHtml(cred.port.toString())}')">Copy</button>
-                            </div>
-                        </div>
-                        <div class="info-item full-width">
-                            <label>Database name:</label>
-                            <div class="info-value">
-                                <code>${escapeHtml(cred.database)}</code>
-                                <button onclick="copyToClipboard('${escapeHtml(cred.database)}')">Copy</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="uri" class="tab-content">
-                    <div class="connection-string-box">
-                        <label>Connection URI</label>
-                        <div class="connection-value">
-                            <code>${escapeHtml(cred.connectionString)}</code>
-                            <button onclick="copyToClipboard('${escapeHtml(cred.connectionString)}')">Copy</button>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="cli" class="tab-content">
-                    <div class="connection-string-box">
-                        <label>CLI Command</label>
-                        <div class="connection-value">
-                            <code>${getCLICommand(cred)}</code>
-                            <button onclick="copyToClipboard('${getCLICommand(cred)}')">Copy</button>
-                        </div>
+        <div class="space-y-6">
+            <!-- Header Info -->
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="text-2xl font-bold text-gray-900">${escapeHtml(db.name)}</h3>
+                    <div class="flex items-center gap-3 mt-2">
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-primary bg-opacity-10 text-primary">
+                            ${escapeHtml(db.type)}
+                        </span>
+                        ${statusBadge}
+                        <span class="text-sm text-gray-600">${regionName}</span>
                     </div>
                 </div>
             </div>
 
-            <h4>Code Examples</h4>
-            <div class="code-examples">
+            <!-- Statistics -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg border border-blue-200">
+                    <div class="text-sm font-medium text-blue-600 mb-1">Storage Usage</div>
+                    <div class="text-2xl font-bold text-blue-900">${stats.usagePercent || 0}%</div>
+                    <div class="text-xs text-blue-600 mt-1">${stats.size || '0 B'} / ${stats.maxSize || '10 MB'}</div>
+                </div>
+                <div class="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-lg border border-green-200">
+                    <div class="text-sm font-medium text-green-600 mb-1">Available Space</div>
+                    <div class="text-2xl font-bold text-green-900">${stats.availableSpace || '10 MB'}</div>
+                </div>
+                <div class="bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-lg border border-purple-200">
+                    <div class="text-sm font-medium text-purple-600 mb-1">Tables</div>
+                    <div class="text-2xl font-bold text-purple-900">${stats.tables || 0}</div>
+                </div>
+            </div>
+
+            <!-- Connection Information Tabs -->
+            <div>
+                <h4 class="text-lg font-bold text-gray-900 mb-4">Connection Information</h4>
+
+                <!-- Tab Buttons -->
+                <div class="border-b border-gray-200 mb-4">
+                    <nav class="flex gap-6">
+                        <button
+                            class="tab-button border-b-2 border-primary text-primary font-semibold pb-3 transition-colors"
+                            onclick="switchTab(event, 'general')"
+                        >
+                            General
+                        </button>
+                        <button
+                            class="tab-button border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-semibold pb-3 transition-colors"
+                            onclick="switchTab(event, 'uri')"
+                        >
+                            Connection URI
+                        </button>
+                        <button
+                            class="tab-button border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-semibold pb-3 transition-colors"
+                            onclick="switchTab(event, 'cli')"
+                        >
+                            CLI Command
+                        </button>
+                    </nav>
+                </div>
+
+                <!-- Tab Content -->
+                <div id="general" class="tab-content">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        ${createInfoItem('User', cred.username)}
+                        ${createInfoItem('Password', cred.password)}
+                        ${createInfoItem('Host', cred.host)}
+                        ${createInfoItem('Port', cred.port.toString())}
+                        <div class="md:col-span-2">
+                            ${createInfoItem('Database', cred.database)}
+                        </div>
+                    </div>
+                </div>
+
+                <div id="uri" class="tab-content hidden">
+                    <div class="bg-gray-900 rounded-lg p-4 flex items-center justify-between gap-4">
+                        <code class="text-green-400 text-sm flex-1 break-all font-mono">${escapeHtml(cred.connectionString)}</code>
+                        <button
+                            onclick="copyToClipboard('${escapeHtml(cred.connectionString)}')"
+                            class="bg-primary hover:bg-opacity-90 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors whitespace-nowrap"
+                        >
+                            Copy
+                        </button>
+                    </div>
+                </div>
+
+                <div id="cli" class="tab-content hidden">
+                    <div class="bg-gray-900 rounded-lg p-4 flex items-center justify-between gap-4">
+                        <code class="text-green-400 text-sm flex-1 break-all font-mono">${getCLICommand(cred)}</code>
+                        <button
+                            onclick="copyToClipboard('${getCLICommand(cred)}')"
+                            class="bg-primary hover:bg-opacity-90 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors whitespace-nowrap"
+                        >
+                            Copy
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Code Examples -->
+            <div>
+                <h4 class="text-lg font-bold text-gray-900 mb-4">Code Examples</h4>
                 ${codeExamples}
             </div>
         </div>
     `;
 
-    modal.classList.add('show');
+    modal.classList.remove('hidden');
+}
+
+// Create info item with copy button
+function createInfoItem(label, value) {
+    return `
+        <div class="space-y-2">
+            <label class="block text-sm font-semibold text-gray-700">${label}</label>
+            <div class="flex items-center gap-2">
+                <code class="flex-1 bg-gray-50 border border-gray-200 px-3 py-2 rounded-lg text-sm font-mono text-gray-900">${escapeHtml(value)}</code>
+                <button
+                    onclick="copyToClipboard('${escapeHtml(value)}')"
+                    class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm font-semibold transition-colors"
+                >
+                    Copy
+                </button>
+            </div>
+        </div>
+    `;
 }
 
 // Get code examples based on database type
 function getCodeExamples(cred) {
     const examples = {
-        'MySQL': `<div class="code-example">
-            <h5>Node.js (MySQL)</h5>
-            <pre><code>const mysql = require('mysql');
+        'MySQL': `
+            <div class="bg-gray-900 rounded-lg p-4">
+                <div class="text-sm font-semibold text-gray-300 mb-3">Node.js (MySQL)</div>
+                <pre class="text-green-400 text-sm overflow-x-auto"><code>const mysql = require('mysql');
 const connection = mysql.createConnection({
   host: '${cred.host}',
   port: ${cred.port},
@@ -292,10 +409,11 @@ connection.connect((err) => {
   if (err) throw err;
   console.log('Connected!');
 });</code></pre>
-        </div>`,
-        'PostgreSQL': `<div class="code-example">
-            <h5>Node.js (PostgreSQL)</h5>
-            <pre><code>const { Client } = require('pg');
+            </div>`,
+        'PostgreSQL': `
+            <div class="bg-gray-900 rounded-lg p-4">
+                <div class="text-sm font-semibold text-gray-300 mb-3">Node.js (PostgreSQL)</div>
+                <pre class="text-green-400 text-sm overflow-x-auto"><code>const { Client } = require('pg');
 const client = new Client({
   host: '${cred.host}',
   port: ${cred.port},
@@ -306,28 +424,31 @@ const client = new Client({
 
 await client.connect();
 console.log('Connected!');</code></pre>
-        </div>`,
-        'MongoDB': `<div class="code-example">
-            <h5>Node.js (MongoDB)</h5>
-            <pre><code>const { MongoClient } = require('mongodb');
+            </div>`,
+        'MongoDB': `
+            <div class="bg-gray-900 rounded-lg p-4">
+                <div class="text-sm font-semibold text-gray-300 mb-3">Node.js (MongoDB)</div>
+                <pre class="text-green-400 text-sm overflow-x-auto"><code>const { MongoClient } = require('mongodb');
 const uri = '${cred.connectionString}';
 const client = new MongoClient(uri);
 
 await client.connect();
 console.log('Connected!');</code></pre>
-        </div>`,
-        'SQLite': `<div class="code-example">
-            <h5>Node.js (SQLite)</h5>
-            <pre><code>const sqlite3 = require('sqlite3');
+            </div>`,
+        'SQLite': `
+            <div class="bg-gray-900 rounded-lg p-4">
+                <div class="text-sm font-semibold text-gray-300 mb-3">Node.js (SQLite)</div>
+                <pre class="text-green-400 text-sm overflow-x-auto"><code>const sqlite3 = require('sqlite3');
 const db = new sqlite3.Database('${cred.database}.db');
 
 db.serialize(() => {
   console.log('Connected!');
 });</code></pre>
-        </div>`,
-        'Redis': `<div class="code-example">
-            <h5>Node.js (Redis)</h5>
-            <pre><code>const redis = require('redis');
+            </div>`,
+        'Redis': `
+            <div class="bg-gray-900 rounded-lg p-4">
+                <div class="text-sm font-semibold text-gray-300 mb-3">Node.js (Redis)</div>
+                <pre class="text-green-400 text-sm overflow-x-auto"><code>const redis = require('redis');
 const client = redis.createClient({
   host: '${cred.host}',
   port: ${cred.port},
@@ -336,10 +457,10 @@ const client = redis.createClient({
 
 await client.connect();
 console.log('Connected!');</code></pre>
-        </div>`
+            </div>`
     };
 
-    return examples[cred.type] || `<p>Code example not available for ${cred.type}</p>`;
+    return examples[cred.type] || `<p class="text-gray-500">Code example not available for ${cred.type}</p>`;
 }
 
 // Get CLI command based on database type
@@ -359,20 +480,22 @@ function switchTab(event, tabName) {
     // Hide all tab contents
     const tabContents = document.querySelectorAll('.tab-content');
     tabContents.forEach(content => {
-        content.classList.remove('active');
+        content.classList.add('hidden');
     });
 
     // Remove active class from all tab buttons
-    const tabButtons = document.querySelectorAll('.tab-btn');
+    const tabButtons = document.querySelectorAll('.tab-button');
     tabButtons.forEach(button => {
-        button.classList.remove('active');
+        button.classList.remove('border-primary', 'text-primary');
+        button.classList.add('border-transparent', 'text-gray-500');
     });
 
     // Show the selected tab content
-    document.getElementById(tabName).classList.add('active');
+    document.getElementById(tabName).classList.remove('hidden');
 
     // Add active class to the clicked button
-    event.currentTarget.classList.add('active');
+    event.currentTarget.classList.add('border-primary', 'text-primary');
+    event.currentTarget.classList.remove('border-transparent', 'text-gray-500');
 }
 
 // Copy to clipboard
@@ -381,6 +504,7 @@ function copyToClipboard(text) {
         showNotification('Copied to clipboard!');
     }).catch(err => {
         console.error('Failed to copy:', err);
+        showNotification('Failed to copy', 'error');
     });
 }
 
@@ -394,38 +518,26 @@ function escapeHtml(text) {
 
 // Show notification
 function showNotification(message, type = 'success') {
-    // Create notification element
     const notification = document.createElement('div');
-    const bgColor = type === 'error' ? '#dc3545' : '#4CAF50';
-    notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: ${bgColor};
-        color: white;
-        padding: 15px 20px;
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-        z-index: 2000;
-        animation: slideInRight 0.3s ease;
-    `;
+    const bgColor = type === 'error' ? 'bg-red-500' : 'bg-green-500';
+
+    notification.className = `fixed top-5 right-5 ${bgColor} text-white px-6 py-3 rounded-lg shadow-2xl z-50 animate-slide-in`;
     notification.textContent = message;
 
     document.body.appendChild(notification);
 
-    // Remove after 3 seconds
     setTimeout(() => {
-        notification.style.animation = 'slideOutRight 0.3s ease';
+        notification.classList.add('animate-slide-out');
         setTimeout(() => {
             document.body.removeChild(notification);
         }, 300);
     }, 3000);
 }
 
-// Add CSS animation for notifications
+// Add CSS animations
 const style = document.createElement('style');
 style.textContent = `
-    @keyframes slideInRight {
+    @keyframes slide-in {
         from {
             transform: translateX(400px);
             opacity: 0;
@@ -436,7 +548,7 @@ style.textContent = `
         }
     }
 
-    @keyframes slideOutRight {
+    @keyframes slide-out {
         from {
             transform: translateX(0);
             opacity: 1;
@@ -445,6 +557,14 @@ style.textContent = `
             transform: translateX(400px);
             opacity: 0;
         }
+    }
+
+    .animate-slide-in {
+        animation: slide-in 0.3s ease;
+    }
+
+    .animate-slide-out {
+        animation: slide-out 0.3s ease;
     }
 `;
 document.head.appendChild(style);

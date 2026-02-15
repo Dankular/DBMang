@@ -98,7 +98,7 @@ function formatBytes(bytes) {
 }
 
 // Create DuckDB database
-function createDuckDBInstance(dbName, dbType, description) {
+function createDuckDBInstance(dbName, dbType, description, region, status) {
     return new Promise((resolve, reject) => {
         const dbPath = path.join(DB_DIR, `${dbName}.duckdb`);
         const db = new duckdb.Database(dbPath);
@@ -118,6 +118,8 @@ function createDuckDBInstance(dbName, dbType, description) {
                 name: dbName,
                 type: dbType,
                 description: description || '',
+                region: region || 'us-east-1',
+                status: status || 'active',
                 credentials,
                 path: dbPath,
                 createdAt: new Date().toISOString(),
@@ -146,7 +148,7 @@ app.get('/api/databases', (req, res) => {
 // Create new database
 app.post('/api/databases', async (req, res) => {
     try {
-        const { name, type, description } = req.body;
+        const { name, type, description, region, status } = req.body;
 
         if (!name || !type) {
             return res.status(400).json({ error: 'Name and type are required' });
@@ -161,7 +163,16 @@ app.post('/api/databases', async (req, res) => {
             return res.status(400).json({ error: 'Database with this name already exists' });
         }
 
-        const database = await createDuckDBInstance(name, type, description);
+        const database = await createDuckDBInstance(name, type, description, region, status);
+
+        // Simulate database provisioning by setting status to active after a delay
+        setTimeout(() => {
+            if (databaseMetadata[database.id]) {
+                databaseMetadata[database.id].status = 'active';
+                saveMetadata();
+            }
+        }, 2000);
+
         res.json(database);
     } catch (error) {
         console.error('Error creating database:', error);
