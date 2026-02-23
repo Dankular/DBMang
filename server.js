@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const mysql = require('mysql');
+const { createClient } = require('@supabase/supabase-js');
 const duckdb = require('duckdb');
 const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
@@ -8,19 +8,39 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Supabase Configuration
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://zfbevkdsjxgxzfbbhvza.supabase.co';
+const SUPABASE_KEY = process.env.SUPABASE_KEY || 'sb_publishable_iZ47UWNzumsl9q8JjaBcYw_Z0rqVfGb';
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// DuckDB instance — persistent in-memory database for query translation
+const duckDB = new duckdb.Database(':memory:');
+const duckConn = duckDB.connect();
+
+// Initialize DuckDB with cross-database helper views
+function initializeDuckDB() {
+    // DuckDB natively supports SQL dialects from MySQL, PostgreSQL, SQLite
+    // It acts as our universal translation layer
+    duckConn.run("SET search_path TO main", (err) => {
+        if (err) console.error('DuckDB init warning:', err.message);
+    });
+    console.log('✓ DuckDB translation layer initialized');
+}
+
+initializeDuckDB();
+
 // CORS configuration for Vercel
 const allowedOrigins = [
     'http://localhost:3000',
     'https://db-mang.vercel.app',
     'https://db-mang-git-claude-database-list-webp-196743-dankulars-projects.vercel.app',
-    /\.vercel\.app$/ // Allow all vercel preview deployments
+    /\.vercel\.app$/
 ];
 
 app.use(cors({
     origin: function(origin, callback) {
-        // Allow requests with no origin (mobile apps, curl, etc)
         if (!origin) return callback(null, true);
-
         if (allowedOrigins.some(allowed => {
             if (allowed instanceof RegExp) return allowed.test(origin);
             return allowed === origin;
@@ -36,79 +56,6 @@ app.use(cors({
 app.use(express.json());
 app.use(express.static('.'));
 
-// Central MySQL Database Connection (stores ALL database instances)
-const centralDB = mysql.createConnection({
-    host: process.env.MYSQL_HOST || "8eysec.h.filess.io",
-    user: process.env.MYSQL_USER || "context_mightydeal",
-    password: process.env.MYSQL_PASSWORD || "76bc57f273566a5b20fcd602342be3cd9197fbc5",
-    database: process.env.MYSQL_DATABASE || "context_mightydeal",
-    port: parseInt(process.env.MYSQL_PORT) || 61001
-});
-
-// Connect to central database
-centralDB.connect(function (err) {
-    if (err) {
-        console.error('Failed to connect to central MySQL database:', err);
-        process.exit(1);
-    }
-    console.log('✓ Connected to central MySQL database');
-    initializeDatabaseSchema();
-});
-
-// Initialize database schema
-function initializeDatabaseSchema() {
-    const createTableQuery = `
-        CREATE TABLE IF NOT EXISTS database_instances (
-            id VARCHAR(36) PRIMARY KEY,
-            name VARCHAR(255) NOT NULL UNIQUE,
-            type VARCHAR(50) NOT NULL,
-            description TEXT,
-            region VARCHAR(50),
-            status VARCHAR(20) DEFAULT 'pending',
-            username VARCHAR(255),
-            password VARCHAR(255),
-            host VARCHAR(255),
-            port INT,
-            database_name VARCHAR(255),
-            connection_string TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            INDEX idx_name (name),
-            INDEX idx_type (type),
-            INDEX idx_status (status)
-        )
-    `;
-
-    centralDB.query(createTableQuery, (err) => {
-        if (err) {
-            console.error('Failed to create database_instances table:', err);
-        } else {
-            console.log('✓ Database schema initialized');
-        }
-    });
-
-    // Create a table to store actual data for each database instance
-    const createDataTablesQuery = `
-        CREATE TABLE IF NOT EXISTS database_tables (
-            id VARCHAR(36) PRIMARY KEY,
-            database_id VARCHAR(36) NOT NULL,
-            table_name VARCHAR(255) NOT NULL,
-            schema_definition TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (database_id) REFERENCES database_instances(id) ON DELETE CASCADE,
-            UNIQUE KEY unique_table (database_id, table_name)
-        )
-    `;
-
-    centralDB.query(createDataTablesQuery, (err) => {
-        if (err) {
-            console.error('Failed to create database_tables table:', err);
-        } else {
-            console.log('✓ Database tables schema initialized');
-        }
-    });
-}
-
 // Generate random password
 function generatePassword() {
     return uuidv4().replace(/-/g, '');
@@ -120,12 +67,11 @@ function generateCredentials(dbName, dbType) {
     const password = generatePassword();
     const host = 'localhost';
 
-    // Different ports for different database types
     const ports = {
         'MySQL': 3306,
         'PostgreSQL': 5432,
         'MongoDB': 27017,
-        'SQLite': 0, // No network port for SQLite
+        'SQLite': 0,
         'Redis': 6379
     };
 
@@ -172,27 +118,104 @@ function formatBytes(bytes) {
 
 // Calculate database size (simulate based on table count)
 function calculateDatabaseSize(tableCount) {
-    // Simulate size based on number of tables (each table ~100KB)
     return tableCount * 100 * 1024;
 }
 
-// API Routes
+// ─── SQL Dialect Translation via DuckDB ───────────────────────────────
+// DuckDB understands MySQL, PostgreSQL, and SQLite SQL natively.
+// For other types we map to DuckDB-compatible SQL.
+
+function translateQuery(query, dbType) {
+    // DuckDB handles standard SQL, MySQL, and PostgreSQL dialects natively.
+    // For MongoDB-style or Redis commands, we provide a translation layer.
+    switch (dbType) {
+        case 'MongoDB': {
+            // Basic MongoDB-style command translation to SQL
+            const findMatch = query.match(/db\.(\w+)\.find\((\{.*?\})?\)/);
+            if (findMatch) {
+                const collection = findMatch[1];
+                const filter = findMatch[2];
+                if (filter && filter !== '{}') {
+                    // Parse simple key:value filters
+                    const conditions = filter.replace(/[{}]/g, '')
+                        .split(',')
+                        .map(pair => {
+                            const [key, val] = pair.split(':').map(s => s.trim().replace(/['"]/g, ''));
+                            return `${key} = '${val}'`;
+                        })
+                        .join(' AND ');
+                    return `SELECT * FROM ${collection} WHERE ${conditions}`;
+                }
+                return `SELECT * FROM ${collection}`;
+            }
+            const insertMatch = query.match(/db\.(\w+)\.insertOne\((\{.*?\})\)/);
+            if (insertMatch) {
+                const collection = insertMatch[1];
+                try {
+                    const doc = JSON.parse(insertMatch[2].replace(/(\w+):/g, '"$1":'));
+                    const keys = Object.keys(doc).join(', ');
+                    const vals = Object.values(doc).map(v => `'${v}'`).join(', ');
+                    return `INSERT INTO ${collection} (${keys}) VALUES (${vals})`;
+                } catch {
+                    return query;
+                }
+            }
+            return query;
+        }
+        case 'Redis': {
+            // Basic Redis command translation to SQL key-value operations
+            const parts = query.trim().split(/\s+/);
+            const cmd = parts[0].toUpperCase();
+            if (cmd === 'GET' && parts[1]) {
+                return `SELECT value FROM kv_store WHERE key = '${parts[1]}'`;
+            }
+            if (cmd === 'SET' && parts[1] && parts[2]) {
+                return `INSERT INTO kv_store (key, value) VALUES ('${parts[1]}', '${parts.slice(2).join(' ')}') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`;
+            }
+            if (cmd === 'DEL' && parts[1]) {
+                return `DELETE FROM kv_store WHERE key = '${parts[1]}'`;
+            }
+            if (cmd === 'KEYS' && parts[1]) {
+                const pattern = parts[1].replace(/\*/g, '%');
+                return `SELECT key FROM kv_store WHERE key LIKE '${pattern}'`;
+            }
+            return query;
+        }
+        case 'MySQL': {
+            // DuckDB handles most MySQL syntax natively
+            // Translate MySQL-specific functions that DuckDB doesn't support
+            let translated = query;
+            translated = translated.replace(/IFNULL\(/gi, 'COALESCE(');
+            translated = translated.replace(/LIMIT\s+(\d+)\s*,\s*(\d+)/gi, 'LIMIT $2 OFFSET $1');
+            return translated;
+        }
+        case 'SQLite': {
+            // DuckDB is highly compatible with SQLite SQL
+            return query;
+        }
+        case 'PostgreSQL': {
+            // DuckDB natively supports most PostgreSQL syntax
+            return query;
+        }
+        default:
+            return query;
+    }
+}
+
+// ─── API Routes ───────────────────────────────────────────────────────
 
 // Get all databases
-app.get('/api/databases', (req, res) => {
-    const query = 'SELECT * FROM database_instances ORDER BY created_at DESC';
+app.get('/api/databases', async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('database_instances')
+            .select('*')
+            .order('created_at', { ascending: false });
 
-    centralDB.query(query, (err, results) => {
-        if (err) {
-            console.error('Error fetching databases:', err);
-            return res.status(500).json({ error: 'Failed to fetch databases' });
-        }
+        if (error) throw error;
 
-        // Format results
-        const databases = results.map(db => {
-            // Get table count for size calculation
-            const size = calculateDatabaseSize(0); // Will be updated with actual table count
-
+        const databases = (data || []).map(db => {
+            const size = calculateDatabaseSize(0);
             return {
                 id: db.id,
                 name: db.name,
@@ -216,7 +239,10 @@ app.get('/api/databases', (req, res) => {
         });
 
         res.json(databases);
-    });
+    } catch (error) {
+        console.error('Error fetching databases:', error);
+        res.status(500).json({ error: 'Failed to fetch databases' });
+    }
 });
 
 // Create new database
@@ -229,78 +255,71 @@ app.post('/api/databases', async (req, res) => {
         }
 
         // Check if database already exists
-        centralDB.query('SELECT id FROM database_instances WHERE name = ?', [name], (err, results) => {
-            if (err) {
-                console.error('Error checking database existence:', err);
-                return res.status(500).json({ error: 'Failed to create database' });
-            }
+        const { data: existing } = await supabase
+            .from('database_instances')
+            .select('id')
+            .eq('name', name)
+            .limit(1);
 
-            if (results.length > 0) {
-                return res.status(400).json({ error: 'Database with this name already exists' });
-            }
+        if (existing && existing.length > 0) {
+            return res.status(400).json({ error: 'Database with this name already exists' });
+        }
 
-            // Generate credentials
-            const credentials = generateCredentials(name, type);
-            const dbId = uuidv4();
+        // Generate credentials
+        const credentials = generateCredentials(name, type);
+        const dbId = uuidv4();
 
-            // Insert into central database
-            const insertQuery = `
-                INSERT INTO database_instances
-                (id, name, type, description, region, status, username, password, host, port, database_name, connection_string)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `;
-
-            const values = [
-                dbId,
+        // Insert into Supabase
+        const { data, error } = await supabase
+            .from('database_instances')
+            .insert({
+                id: dbId,
                 name,
                 type,
-                description || '',
-                region || 'us-east-1',
-                status || 'pending',
-                credentials.username,
-                credentials.password,
-                credentials.host,
-                credentials.port,
-                credentials.database,
-                credentials.connectionString
-            ];
+                description: description || '',
+                region: region || 'us-east-1',
+                status: status || 'pending',
+                username: credentials.username,
+                password: credentials.password,
+                host: credentials.host,
+                port: credentials.port,
+                database_name: credentials.database,
+                connection_string: credentials.connectionString
+            })
+            .select()
+            .single();
 
-            centralDB.query(insertQuery, values, (err, result) => {
-                if (err) {
-                    console.error('Error creating database:', err);
-                    return res.status(500).json({ error: 'Failed to create database' });
-                }
+        if (error) throw error;
 
-                // Simulate database provisioning by updating status to active after a delay
-                setTimeout(() => {
-                    centralDB.query(
-                        'UPDATE database_instances SET status = ? WHERE id = ?',
-                        ['active', dbId],
-                        (err) => {
-                            if (err) {
-                                console.error('Error updating database status:', err);
-                            }
-                        }
-                    );
-                }, 2000);
-
-                // Return created database
-                const database = {
-                    id: dbId,
-                    name,
-                    type,
-                    description: description || '',
-                    region: region || 'us-east-1',
-                    status: status || 'pending',
-                    credentials,
-                    createdAt: new Date().toISOString(),
-                    size: 0,
-                    sizeFormatted: '0 B'
-                };
-
-                res.json(database);
-            });
+        // Also create a DuckDB namespace for this database instance
+        // This allows DuckDB to manage per-instance schema translation
+        duckConn.run(`CREATE SCHEMA IF NOT EXISTS "db_${dbId.replace(/-/g, '_')}"`, (err) => {
+            if (err) console.error('DuckDB schema creation warning:', err.message);
         });
+
+        // Simulate provisioning - mark as active after delay
+        setTimeout(async () => {
+            await supabase
+                .from('database_instances')
+                .update({ status: 'active' })
+                .eq('id', dbId);
+        }, 2000);
+
+        // Return created database
+        const database = {
+            id: dbId,
+            name,
+            type,
+            description: description || '',
+            region: region || 'us-east-1',
+            status: status || 'pending',
+            credentials,
+            createdAt: new Date().toISOString(),
+            size: 0,
+            sizeFormatted: '0 B'
+        };
+
+        res.json(database);
     } catch (error) {
         console.error('Error creating database:', error);
         res.status(500).json({ error: 'Failed to create database' });
@@ -308,20 +327,18 @@ app.post('/api/databases', async (req, res) => {
 });
 
 // Get database by ID
-app.get('/api/databases/:id', (req, res) => {
-    const query = 'SELECT * FROM database_instances WHERE id = ?';
+app.get('/api/databases/:id', async (req, res) => {
+    try {
+        const { data: db, error } = await supabase
+            .from('database_instances')
+            .select('*')
+            .eq('id', req.params.id)
+            .single();
 
-    centralDB.query(query, [req.params.id], (err, results) => {
-        if (err) {
-            console.error('Error fetching database:', err);
-            return res.status(500).json({ error: 'Failed to fetch database' });
-        }
-
-        if (results.length === 0) {
+        if (error || !db) {
             return res.status(404).json({ error: 'Database not found' });
         }
 
-        const db = results[0];
         const size = calculateDatabaseSize(0);
 
         res.json({
@@ -344,71 +361,104 @@ app.get('/api/databases/:id', (req, res) => {
             size: size,
             sizeFormatted: formatBytes(size)
         });
-    });
+    } catch (error) {
+        console.error('Error fetching database:', error);
+        res.status(500).json({ error: 'Failed to fetch database' });
+    }
 });
 
 // Delete database
-app.delete('/api/databases/:id', (req, res) => {
-    const query = 'DELETE FROM database_instances WHERE id = ?';
+app.delete('/api/databases/:id', async (req, res) => {
+    try {
+        // Clean up DuckDB schema for this instance
+        const schemaName = `db_${req.params.id.replace(/-/g, '_')}`;
+        duckConn.run(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`, () => {});
 
-    centralDB.query(query, [req.params.id], (err, result) => {
-        if (err) {
-            console.error('Error deleting database:', err);
-            return res.status(500).json({ error: 'Failed to delete database' });
-        }
+        const { error, count } = await supabase
+            .from('database_instances')
+            .delete()
+            .eq('id', req.params.id);
 
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ error: 'Database not found' });
-        }
+        if (error) throw error;
 
         res.json({ message: 'Database deleted successfully' });
-    });
+    } catch (error) {
+        console.error('Error deleting database:', error);
+        res.status(500).json({ error: 'Failed to delete database' });
+    }
 });
 
-// Execute query on database using DuckDB as interface
-app.post('/api/databases/:id/query', (req, res) => {
+// Execute query on database using DuckDB as translation layer
+app.post('/api/databases/:id/query', async (req, res) => {
     const { query } = req.body;
 
     if (!query) {
         return res.status(400).json({ error: 'Query is required' });
     }
 
-    // Get database instance
-    centralDB.query('SELECT * FROM database_instances WHERE id = ?', [req.params.id], (err, results) => {
-        if (err || results.length === 0) {
+    try {
+        // Get database instance to know its type
+        const { data: db, error: fetchError } = await supabase
+            .from('database_instances')
+            .select('*')
+            .eq('id', req.params.id)
+            .single();
+
+        if (fetchError || !db) {
             return res.status(404).json({ error: 'Database not found' });
         }
 
-        const db = results[0];
+        // Translate the query from the source dialect to DuckDB-compatible SQL
+        const translatedQuery = translateQuery(query, db.type);
 
-        // Use DuckDB as query interface
-        // DuckDB can connect to MySQL and translate queries
-        const duckdbInstance = new duckdb.Database(':memory:');
-
-        duckdbInstance.all(query, (err, result) => {
+        // Set the search path to this database's DuckDB schema
+        const schemaName = `db_${req.params.id.replace(/-/g, '_')}`;
+        duckConn.run(`CREATE SCHEMA IF NOT EXISTS "${schemaName}"`, () => {});
+        duckConn.run(`SET search_path TO "${schemaName}"`, (err) => {
             if (err) {
-                duckdbInstance.close();
-                return res.status(400).json({ error: err.message });
+                console.error('DuckDB schema switch warning:', err.message);
             }
 
-            duckdbInstance.close();
-            res.json({ result });
+            // Execute the translated query via DuckDB
+            duckConn.all(translatedQuery, (err, result) => {
+                if (err) {
+                    return res.status(400).json({
+                        error: err.message,
+                        originalQuery: query,
+                        translatedQuery: translatedQuery,
+                        dialect: db.type
+                    });
+                }
+
+                res.json({
+                    result,
+                    metadata: {
+                        dialect: db.type,
+                        originalQuery: query,
+                        translatedQuery: translatedQuery !== query ? translatedQuery : undefined,
+                        engine: 'DuckDB',
+                        rowCount: result ? result.length : 0
+                    }
+                });
+            });
         });
-    });
+    } catch (error) {
+        console.error('Error executing query:', error);
+        res.status(500).json({ error: 'Failed to execute query' });
+    }
 });
 
 // Get database statistics
-app.get('/api/databases/:id/stats', (req, res) => {
-    // Get table count for this database
-    const tableQuery = 'SELECT COUNT(*) as tableCount FROM database_tables WHERE database_id = ?';
+app.get('/api/databases/:id/stats', async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('database_tables')
+            .select('id')
+            .eq('database_id', req.params.id);
 
-    centralDB.query(tableQuery, [req.params.id], (err, results) => {
-        if (err) {
-            console.error('Error fetching stats:', err);
-            return res.status(500).json({ error: 'Failed to fetch statistics' });
-        }
+        if (error) throw error;
 
-        const tableCount = results[0]?.tableCount || 0;
+        const tableCount = data ? data.length : 0;
         const size = calculateDatabaseSize(tableCount);
         const maxSize = 10 * 1024 * 1024; // 10 MB
         const usagePercent = (size / maxSize) * 100;
@@ -422,27 +472,43 @@ app.get('/api/databases/:id/stats', (req, res) => {
             usagePercent: Math.round(usagePercent * 100) / 100,
             availableSpace: formatBytes(maxSize - size)
         });
-    });
+    } catch (error) {
+        console.error('Error fetching stats:', error);
+        res.status(500).json({ error: 'Failed to fetch statistics' });
+    }
 });
 
 // Create table in database instance
-app.post('/api/databases/:id/tables', (req, res) => {
+app.post('/api/databases/:id/tables', async (req, res) => {
     const { tableName, schema } = req.body;
 
     if (!tableName) {
         return res.status(400).json({ error: 'Table name is required' });
     }
 
-    const tableId = uuidv4();
-    const query = `
-        INSERT INTO database_tables (id, database_id, table_name, schema_definition)
-        VALUES (?, ?, ?, ?)
-    `;
+    try {
+        const tableId = uuidv4();
 
-    centralDB.query(query, [tableId, req.params.id, tableName, schema || ''], (err) => {
-        if (err) {
-            console.error('Error creating table:', err);
-            return res.status(500).json({ error: 'Failed to create table' });
+        const { data, error } = await supabase
+            .from('database_tables')
+            .insert({
+                id: tableId,
+                database_id: req.params.id,
+                table_name: tableName,
+                schema_definition: schema || ''
+            })
+            .select()
+            .single();
+
+        if (error) throw error;
+
+        // Also create the table in DuckDB for query execution
+        const schemaName = `db_${req.params.id.replace(/-/g, '_')}`;
+        if (schema) {
+            duckConn.run(`CREATE SCHEMA IF NOT EXISTS "${schemaName}"`, () => {});
+            duckConn.run(`CREATE TABLE IF NOT EXISTS "${schemaName}"."${tableName}" (${schema})`, (err) => {
+                if (err) console.error('DuckDB table creation warning:', err.message);
+            });
         }
 
         res.json({
@@ -451,57 +517,68 @@ app.post('/api/databases/:id/tables', (req, res) => {
             table_name: tableName,
             schema_definition: schema || ''
         });
-    });
+    } catch (error) {
+        console.error('Error creating table:', error);
+        res.status(500).json({ error: 'Failed to create table' });
+    }
 });
 
 // Get tables for a database instance
-app.get('/api/databases/:id/tables', (req, res) => {
-    const query = 'SELECT * FROM database_tables WHERE database_id = ?';
+app.get('/api/databases/:id/tables', async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('database_tables')
+            .select('*')
+            .eq('database_id', req.params.id);
 
-    centralDB.query(query, [req.params.id], (err, results) => {
-        if (err) {
-            console.error('Error fetching tables:', err);
-            return res.status(500).json({ error: 'Failed to fetch tables' });
-        }
+        if (error) throw error;
 
-        res.json(results);
-    });
+        res.json(data || []);
+    } catch (error) {
+        console.error('Error fetching tables:', error);
+        res.status(500).json({ error: 'Failed to fetch tables' });
+    }
 });
 
 // Health check endpoint
-app.get('/api/health', (req, res) => {
-    centralDB.query('SELECT 1', (err) => {
-        if (err) {
-            return res.status(500).json({
-                status: 'unhealthy',
-                database: 'disconnected',
-                error: err.message
-            });
-        }
+app.get('/api/health', async (req, res) => {
+    try {
+        // Check Supabase connectivity
+        const { error } = await supabase
+            .from('database_instances')
+            .select('id')
+            .limit(1);
+
+        if (error) throw error;
 
         res.json({
             status: 'healthy',
-            database: 'connected',
+            backend: 'supabase',
+            translationLayer: 'duckdb',
             timestamp: new Date().toISOString()
         });
-    });
+    } catch (error) {
+        res.status(500).json({
+            status: 'unhealthy',
+            backend: 'supabase',
+            error: error.message
+        });
+    }
 });
 
 // Handle graceful shutdown
 process.on('SIGINT', () => {
-    console.log('\nClosing database connection...');
-    centralDB.end((err) => {
-        if (err) {
-            console.error('Error closing database:', err);
-        }
-        console.log('Database connection closed');
-        process.exit(0);
-    });
+    console.log('\nShutting down...');
+    duckConn.close();
+    duckDB.close();
+    console.log('DuckDB connection closed');
+    process.exit(0);
 });
 
 // Start server
 app.listen(PORT, () => {
     console.log(`\n✓ Database Manager API running on http://localhost:${PORT}`);
-    console.log(`✓ All database instances stored in central MySQL database`);
-    console.log(`✓ DuckDB acting as query interface layer\n`);
+    console.log(`✓ Supabase backend: ${SUPABASE_URL}`);
+    console.log(`✓ DuckDB translation layer active`);
+    console.log(`✓ Supported dialects: MySQL, PostgreSQL, MongoDB, SQLite, Redis\n`);
 });
