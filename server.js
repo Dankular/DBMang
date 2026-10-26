@@ -11,6 +11,7 @@ const PORT = process.env.PORT || 3000;
 // CORS configuration for Vercel
 const allowedOrigins = [
     'http://localhost:3000',
+    'https://sn6i2gei26xsvov19n4s44ve.app.khosa.co',
     'https://db-mang.vercel.app',
     'https://db-mang-git-claude-database-list-webp-196743-dankulars-projects.vercel.app',
     /\.vercel\.app$/ // Allow all vercel preview deployments
@@ -33,15 +34,26 @@ app.use(cors({
     credentials: true
 }));
 
+app.get('/healthz', (_req, res) => res.json({status: 'ok'}));
+app.use((req, res, next) => {
+ const expected = Buffer.from('admin:' + process.env.ADMIN_BASIC_AUTH_PASSWORD);
+ const supplied = Buffer.from((req.headers.authorization || '').replace(/^Basic /, ''), 'base64');
+ if (expected.length === supplied.length && require('crypto').timingSafeEqual(expected, supplied)) return next();
+ res.setHeader('WWW-Authenticate', 'Basic realm=DBMang');
+ return res.status(401).send('Authentication required');
+});
 app.use(express.json());
-app.use(express.static('.'));
+const path = require('path');
+app.get('/', (_req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+for (const asset of ['script.js', 'styles.css']) app.get('/' + asset, (_req, res) => res.sendFile(path.join(__dirname, asset)));
+app.get('/healthz', (_req, res) => res.json({status:'ok'}));
 
 // Central MySQL Database Connection (stores ALL database instances)
 const centralDB = mysql.createConnection({
-    host: process.env.MYSQL_HOST || "8eysec.h.filess.io",
-    user: process.env.MYSQL_USER || "context_mightydeal",
-    password: process.env.MYSQL_PASSWORD || "76bc57f273566a5b20fcd602342be3cd9197fbc5",
-    database: process.env.MYSQL_DATABASE || "context_mightydeal",
+    host: process.env.MYSQL_HOST,
+    user: process.env.MYSQL_USER,
+    password: process.env.MYSQL_PASSWORD,
+    database: process.env.MYSQL_DATABASE,
     port: parseInt(process.env.MYSQL_PORT) || 61001
 });
 
