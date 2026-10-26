@@ -6,4 +6,4 @@ RUN npm install --omit=dev
 COPY server.js index.html script.js styles.css ./
 ENV NODE_ENV=production PORT=3000
 EXPOSE 3000
-CMD ["node", "server.js"]
+CMD ["sh", "-c", "while true; do node server.js; sleep 30; done"]
